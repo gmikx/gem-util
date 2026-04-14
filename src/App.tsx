@@ -19,7 +19,10 @@ type Tab = "dashboard" | "about" | "calculator";
 const DEFAULT_TICKERS = ["IUSQ.DE", "EIMI.L", "CNDX.L", "IB01.L", "CBU0.L"];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<Tab>("dashboard");
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    const hash = window.location.hash.replace("#", "") as Tab;
+    return ["dashboard", "about", "calculator"].includes(hash) ? hash : "dashboard";
+  });
   const [data, setData] = useState<MomentumResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -62,11 +65,25 @@ export default function App() {
     fetchData(tickers);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── localStorage sync ──
+  // ── URL Hash & localStorage sync ──
 
   useEffect(() => {
+    if (window.location.hash !== `#${activeTab}`) {
+      window.location.hash = activeTab;
+    }
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [activeTab]);
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace("#", "") as Tab;
+      if (["dashboard", "about", "calculator"].includes(hash)) {
+        setActiveTab(hash);
+      }
+    };
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("gem_tickers", JSON.stringify(tickers));
