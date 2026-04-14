@@ -20,12 +20,12 @@ interface CalculatorPageProps {
 }
 
 const INVESTMENT_COLORS = [
-  { stroke: "#0052cc", dark: "#58a6ff", gradient: "colorInv0" },
-  { stroke: "#009668", dark: "#6ffbbe", gradient: "colorInv1" },
-  { stroke: "#ba1a1a", dark: "#ff6b6b", gradient: "colorInv2" },
-  { stroke: "#e6a100", dark: "#ffd54f", gradient: "colorInv3" },
-  { stroke: "#8e24aa", dark: "#ce93d8", gradient: "colorInv4" },
-  { stroke: "#039be5", dark: "#81d4fa", gradient: "colorInv5" },
+  { stroke: "#009668", dark: "#6ffbbe", gradient: "colorInv0" }, // Green
+  { stroke: "#e6a100", dark: "#ffd54f", gradient: "colorInv1" }, // Yellow
+  { stroke: "#ba1a1a", dark: "#ff6b6b", gradient: "colorInv2" }, // Red
+  { stroke: "#8e24aa", dark: "#ce93d8", gradient: "colorInv3" }, // Purple
+  { stroke: "#039be5", dark: "#81d4fa", gradient: "colorInv4" }, // Light Blue
+  { stroke: "#d84315", dark: "#ff8a65", gradient: "colorInv5" }, // Orange
 ];
 
 function createDefaultInvestment(name: string, monthly: number, returnPct: number): Investment {
@@ -163,9 +163,9 @@ export function CalculatorPage({ t, darkMode, data }: CalculatorPageProps) {
   const formatValue = (val: number) => {
     if (val >= 1e15) return `$${+(val / 1e15).toFixed(1)}${t.unitQ}`;
     if (val >= 1e12) return `$${+(val / 1e12).toFixed(1)}${t.unitT}`;
-    if (val >= 1e9)  return `$${+(val / 1e9).toFixed(1)}${t.unitB}`;
-    if (val >= 1e6)  return `$${+(val / 1e6).toFixed(1)}${t.unitM}`;
-    if (val >= 1e3)  return `$${+(val / 1e3).toFixed(1)}${t.unitK}`;
+    if (val >= 1e9) return `$${+(val / 1e9).toFixed(1)}${t.unitB}`;
+    if (val >= 1e6) return `$${+(val / 1e6).toFixed(1)}${t.unitM}`;
+    if (val >= 1e3) return `$${+(val / 1e3).toFixed(1)}${t.unitK}`;
     return `$${val}`;
   };
 
