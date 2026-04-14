@@ -3,6 +3,9 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import yf from "yahoo-finance2";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+
 // The error "Call const yahooFinance = new YahooFinance() first" 
 // indicates that we need to instantiate the class.
 // In newer versions of yahoo-finance2, the default export might be the class or contain it.
@@ -19,6 +22,22 @@ const MAX_TICKERS = 20;
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  // Trust reverse proxy (e.g. Nginx) so rate limiter doesn't block everyone globally
+  app.set("trust proxy", 1);
+
+  // use security headers
+  app.use(helmet({
+    contentSecurityPolicy: false,
+  }));
+
+  // limit the number of requests (e.g. 30 per 15 minutes for one IP)
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    message: "Too many requests, try again later."
+  });
+  app.use("/api/", limiter);
 
   // API routes
   app.get("/api/momentum", async (req, res) => {
