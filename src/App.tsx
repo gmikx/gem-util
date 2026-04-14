@@ -32,7 +32,7 @@ export default function App() {
     return (localStorage.getItem("gem_lang") as "pl" | "en") || "pl";
   });
   const [darkMode, setDarkMode] = useState(() => {
-    return localStorage.getItem("gem_theme") === "dark";
+    return localStorage.getItem("gem_theme") !== "light";
   });
   const [period, setPeriod] = useState<string>(() => {
     return localStorage.getItem("gem_period") || "12m";
