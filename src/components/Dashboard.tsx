@@ -257,10 +257,6 @@ export function Dashboard({
       <section className="bg-surface rounded-xl overflow-hidden shadow-sm border border-outline-variant/5">
         <div className="p-8 border-b border-surface-low flex justify-between items-center">
           <h3 className="font-headline font-bold text-xl">{t.analytics}</h3>
-          <button className="flex items-center gap-2 text-primary font-bold text-sm hover:underline">
-            <Download className="w-4 h-4" />
-            {t.export}
-          </button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
