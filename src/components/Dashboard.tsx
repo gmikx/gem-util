@@ -160,7 +160,7 @@ export function Dashboard({
             <label className="block text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">{t.addNew}</label>
             <div className="flex gap-2">
               <input
-                className="flex-1 bg-surface-low border-none rounded p-3 text-sm focus:ring-1 focus:ring-primary"
+                className="flex-1 bg-surface-low border-none rounded p-3 text-sm focus:ring-1 focus:ring-primary text-primary placeholder:text-on-surface-variant/50 focus:outline-none"
                 placeholder="e.g. EIMI"
                 type="text"
                 value={newTicker}
