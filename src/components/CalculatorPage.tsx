@@ -1,59 +1,173 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion } from "motion/react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { Calculator } from "lucide-react";
+import { Calculator, Plus, X, GripVertical } from "lucide-react";
 
-interface CalculatorPageProps {
-  t: any;
-  darkMode: boolean;
+interface Investment {
+  id: string;
+  name: string;
+  initialAmount: number | "";
+  monthlyContribution: number | "";
+  expectedReturn: number | "";
 }
 
-export function CalculatorPage({ t, darkMode }: CalculatorPageProps) {
-  const [initialAmount, setInitialAmount] = useState<number | "">(1000);
-  const [monthlyContribution, setMonthlyContribution] = useState<number | "">(1000);
-  const [contributionIncrease, setContributionIncrease] = useState<number | "">(5);
-  const [expectedReturn, setExpectedReturn] = useState<number | "">(8);
-  const [years, setYears] = useState<number>(25);
+import type { MomentumResponse } from "../types";
+
+interface CalculatorPageProps {
+  t: Record<string, string>;
+  darkMode: boolean;
+  data: MomentumResponse | null;
+}
+
+const INVESTMENT_COLORS = [
+  { stroke: "#0052cc", dark: "#58a6ff", gradient: "colorInv0" },
+  { stroke: "#009668", dark: "#6ffbbe", gradient: "colorInv1" },
+  { stroke: "#ba1a1a", dark: "#ff6b6b", gradient: "colorInv2" },
+  { stroke: "#e6a100", dark: "#ffd54f", gradient: "colorInv3" },
+  { stroke: "#8e24aa", dark: "#ce93d8", gradient: "colorInv4" },
+  { stroke: "#039be5", dark: "#81d4fa", gradient: "colorInv5" },
+];
+
+function createDefaultInvestment(name: string, monthly: number, returnPct: number): Investment {
+  return {
+    id: crypto.randomUUID(),
+    name,
+    initialAmount: 0,
+    monthlyContribution: monthly,
+    expectedReturn: returnPct,
+  };
+}
+
+export function CalculatorPage({ t, darkMode, data }: CalculatorPageProps) {
+  const defaultReturn = useMemo(() => {
+    if (!data || !data.recommendation) return 8; // fallback
+    const recommended = data.data.find(d => d.ticker === data.recommendation);
+    return recommended ? Number(recommended.returnPct.toFixed(1)) : 8;
+  }, [data]);
+
+  const [investments, setInvestments] = useState<Investment[]>(() => {
+    const saved = localStorage.getItem("gem_calc_investments");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch { /* fall through */ }
+    }
+    return [
+      createDefaultInvestment(t.defaultEtf || "GEM Portfolio", 500, defaultReturn),
+    ];
+  });
+  const [contributionIncrease, setContributionIncrease] = useState<number | "">(() => {
+    const saved = localStorage.getItem("gem_calc_increase");
+    return saved ? Number(saved) : 5;
+  });
+  const [years, setYears] = useState<number>(() => {
+    const saved = localStorage.getItem("gem_calc_years");
+    return saved ? Number(saved) : 25;
+  });
+
+  // Persist to localStorage
+  useEffect(() => {
+    localStorage.setItem("gem_calc_investments", JSON.stringify(investments));
+  }, [investments]);
+  useEffect(() => {
+    localStorage.setItem("gem_calc_increase", String(contributionIncrease));
+  }, [contributionIncrease]);
+  useEffect(() => {
+    localStorage.setItem("gem_calc_years", String(years));
+  }, [years]);
+
+  const addInvestment = () => {
+    setInvestments(prev => [
+      ...prev,
+      createDefaultInvestment(`${t.investmentLabel || "Investment"} ${prev.length + 1}`, 500, 6),
+    ]);
+  };
+
+  const removeInvestment = (id: string) => {
+    setInvestments(prev => prev.filter(inv => inv.id !== id));
+  };
+
+  const updateInvestment = (id: string, field: keyof Investment, value: string | number) => {
+    setInvestments(prev =>
+      prev.map(inv => inv.id === id ? { ...inv, [field]: value } : inv)
+    );
+  };
 
   const chartData = useMemo(() => {
-    const result = [];
-    const _initial = Number(initialAmount) || 0;
-    const _monthly = Number(monthlyContribution) || 0;
-    const _return = Number(expectedReturn) || 0;
+    const result: Record<string, number | string>[] = [];
     const _increase = Number(contributionIncrease) || 0;
 
-    let currentTotal = _initial;
-    let currentDeposited = _initial;
+    // Initialize per-investment tracking
+    const state = investments.map(inv => ({
+      id: inv.id,
+      name: inv.name || "Unnamed",
+      total: Number(inv.initialAmount) || 0,
+      deposited: Number(inv.initialAmount) || 0,
+      monthly: Number(inv.monthlyContribution) || 0,
+      returnRate: Number(inv.expectedReturn) || 0,
+    }));
 
-    result.push({
-      year: 0,
-      deposited: currentDeposited,
-      value: currentTotal
+    // Year 0
+    const initialPoint: Record<string, number | string> = { year: 0 };
+    let totalDeposited = 0;
+    let totalValue = 0;
+    state.forEach(s => {
+      initialPoint[s.id] = s.total;
+      totalDeposited += s.deposited;
+      totalValue += s.total;
     });
-
-    let currentMonthly = _monthly;
+    initialPoint.deposited = totalDeposited;
+    initialPoint.total = totalValue;
+    result.push(initialPoint);
 
     for (let y = 1; y <= years; y++) {
-      for (let m = 0; m < 12; m++) {
-        currentTotal += currentMonthly;
-        // monthly compound interest approximation
-        currentTotal *= (1 + (_return / 100) / 12);
-        currentDeposited += currentMonthly;
-      }
-      currentMonthly *= (1 + (_increase / 100));
+      const point: Record<string, number | string> = { year: y };
+      let yearTotalDeposited = 0;
+      let yearTotalValue = 0;
 
-      result.push({
-        year: y,
-        deposited: Math.round(currentDeposited),
-        value: Math.round(currentTotal)
+      state.forEach(s => {
+        for (let m = 0; m < 12; m++) {
+          s.total += s.monthly;
+          s.total *= (1 + (s.returnRate / 100) / 12);
+          s.deposited += s.monthly;
+        }
+        // Apply yearly contribution increase
+        s.monthly *= (1 + (_increase / 100));
+
+        point[s.id] = Math.round(s.total);
+        yearTotalDeposited += s.deposited;
+        yearTotalValue += s.total;
       });
-    }
-    return result;
-  }, [initialAmount, monthlyContribution, expectedReturn, years, contributionIncrease]);
 
-  const finalValue = chartData[chartData.length - 1]?.value || 0;
-  const finalDeposited = chartData[chartData.length - 1]?.deposited || 0;
-  const monthlyPassiveIncome = finalValue * (Number(expectedReturn) || 0) / 100 / 12;
+      point.deposited = Math.round(yearTotalDeposited);
+      point.total = Math.round(yearTotalValue);
+      result.push(point);
+    }
+
+    return result;
+  }, [investments, contributionIncrease, years]);
+
+  const finalTotal = (chartData[chartData.length - 1]?.total as number) || 0;
+  const finalDeposited = (chartData[chartData.length - 1]?.deposited as number) || 0;
+
+  // Weighted average return for passive income estimate
+  const weightedReturn = useMemo(() => {
+    const totalMonthly = investments.reduce((sum, inv) => sum + (Number(inv.monthlyContribution) || 0), 0);
+    if (totalMonthly === 0) return 0;
+    return investments.reduce((sum, inv) => {
+      const w = (Number(inv.monthlyContribution) || 0) / totalMonthly;
+      return sum + w * (Number(inv.expectedReturn) || 0);
+    }, 0);
+  }, [investments]);
+
+  const formatValue = (val: number) => {
+    if (val >= 1e15) return `$${+(val / 1e15).toFixed(1)}${t.unitQ}`;
+    if (val >= 1e12) return `$${+(val / 1e12).toFixed(1)}${t.unitT}`;
+    if (val >= 1e9)  return `$${+(val / 1e9).toFixed(1)}${t.unitB}`;
+    if (val >= 1e6)  return `$${+(val / 1e6).toFixed(1)}${t.unitM}`;
+    if (val >= 1e3)  return `$${+(val / 1e3).toFixed(1)}${t.unitK}`;
+    return `$${val}`;
+  };
 
   return (
     <motion.div
@@ -70,61 +184,94 @@ export function CalculatorPage({ t, darkMode }: CalculatorPageProps) {
         <div>
           <h2 className="text-3xl font-bold font-headline leading-tight">{t.calcTitle}</h2>
           <p className="text-sm text-on-surface-variant">
-            {t.totalValue}: <span className="font-bold text-primary">${finalValue.toLocaleString()}</span>
+            {t.totalValue}: <span className="font-bold text-primary">${finalTotal.toLocaleString()}</span>
           </p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Controls */}
-        <div className="bg-surface p-6 rounded-xl border border-outline-variant/10 space-y-4 lg:col-span-4 shadow-sm flex flex-col justify-between">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                {t.initialAmount}
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant font-bold">$</span>
-                <input
-                  type="number"
-                  value={initialAmount}
-                  onChange={(e) => setInitialAmount(e.target.value === "" ? "" : Number(e.target.value))}
-                  className="w-full bg-surface-low rounded-lg border border-outline-variant/20 px-8 py-2.5 outline-none focus:ring-2 focus:ring-primary/50 text-lg font-headline font-bold text-primary"
-                />
-              </div>
-            </div>
+        <div className="bg-surface p-6 rounded-xl border border-outline-variant/10 space-y-5 lg:col-span-4 shadow-sm flex flex-col">
+          {/* Per-investment inputs */}
+          <div className="space-y-4 flex-1">
+            {investments.map((inv, idx) => {
+              const color = INVESTMENT_COLORS[idx % INVESTMENT_COLORS.length];
+              const stroke = darkMode ? color.dark : color.stroke;
+              return (
+                <div key={inv.id} className="p-4 bg-surface-low rounded-xl space-y-3 relative group">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: stroke }} />
+                    <input
+                      type="text"
+                      value={inv.name}
+                      onChange={(e) => updateInvestment(inv.id, "name", e.target.value)}
+                      className="flex-1 bg-transparent border-none outline-none font-bold text-sm text-primary"
+                      placeholder={t.investmentLabel || "Investment name"}
+                    />
+                    {investments.length > 1 && (
+                      <button
+                        onClick={() => removeInvestment(inv.id)}
+                        className="opacity-0 group-hover:opacity-100 text-on-surface-variant hover:text-red-500 transition-all"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
 
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                {t.monthlyContribution}
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant font-bold">$</span>
-                <input
-                  type="number"
-                  value={monthlyContribution}
-                  onChange={(e) => setMonthlyContribution(e.target.value === "" ? "" : Number(e.target.value))}
-                  className="w-full bg-surface-low rounded-lg border border-outline-variant/20 px-8 py-2.5 outline-none focus:ring-2 focus:ring-primary/50 text-lg font-headline font-bold text-primary"
-                />
-              </div>
-            </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[9px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">{t.initialAmount}</label>
+                      <div className="relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-xs font-bold">$</span>
+                        <input
+                          type="number"
+                          value={inv.initialAmount}
+                          onChange={(e) => updateInvestment(inv.id, "initialAmount", e.target.value === "" ? "" : Number(e.target.value))}
+                          className="w-full bg-surface rounded border border-outline-variant/20 pl-5 pr-2 py-1.5 outline-none focus:ring-1 focus:ring-primary/50 text-sm font-bold text-primary"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">{t.monthlyShort || "/mo"}</label>
+                      <div className="relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-xs font-bold">$</span>
+                        <input
+                          type="number"
+                          value={inv.monthlyContribution}
+                          onChange={(e) => updateInvestment(inv.id, "monthlyContribution", e.target.value === "" ? "" : Number(e.target.value))}
+                          className="w-full bg-surface rounded border border-outline-variant/20 pl-5 pr-2 py-1.5 outline-none focus:ring-1 focus:ring-primary/50 text-sm font-bold text-primary"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-bold uppercase tracking-widest text-on-surface-variant mb-1">{t.returnShort || "Return"}</label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={inv.expectedReturn}
+                          onChange={(e) => updateInvestment(inv.id, "expectedReturn", e.target.value === "" ? "" : Number(e.target.value))}
+                          className="w-full bg-surface rounded border border-outline-variant/20 px-2 py-1.5 outline-none focus:ring-1 focus:ring-primary/50 text-sm font-bold text-primary"
+                        />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-xs font-bold">%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
 
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
-                {t.expectedReturn}
-              </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  value={expectedReturn}
-                  step="0.5"
-                  onChange={(e) => setExpectedReturn(e.target.value === "" ? "" : Number(e.target.value))}
-                  className="w-full bg-surface-low rounded-lg border border-outline-variant/20 px-4 py-2.5 outline-none focus:ring-2 focus:ring-primary/50 text-lg font-headline font-bold text-primary"
-                />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant font-bold">%</span>
-              </div>
-            </div>
+            <button
+              onClick={addInvestment}
+              className="w-full flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-outline-variant/30 rounded-xl text-sm font-bold text-on-surface-variant hover:border-primary hover:text-primary transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              {t.addInvestment || "Add Investment"}
+            </button>
+          </div>
 
+          {/* Global controls */}
+          <div className="pt-4 border-t border-outline-variant/10 space-y-4">
             <div>
               <label className="block text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-2">
                 {t.contributionIncrease}
@@ -157,14 +304,19 @@ export function CalculatorPage({ t, darkMode }: CalculatorPageProps) {
             </div>
           </div>
 
-          <div className="mt-8 pt-6 border-t border-outline-variant/10">
+          {/* Summary */}
+          <div className="pt-4 border-t border-outline-variant/10">
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-semibold text-on-surface-variant">{t.totalDeposited}:</span>
               <span className="font-bold text-lg">${finalDeposited.toLocaleString()}</span>
             </div>
-            <div className="flex justify-between items-center text-tertiary">
+            <div className="flex justify-between items-center text-tertiary mb-2">
               <span className="text-sm font-semibold">{t.performance}:</span>
-              <span className="font-bold text-lg">+${(finalValue - finalDeposited).toLocaleString()}</span>
+              <span className="font-bold text-lg">+${(finalTotal - finalDeposited).toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between items-center text-primary">
+              <span className="text-sm font-semibold">{t.passiveIncome}:</span>
+              <span className="font-bold text-lg">${Math.round(finalTotal * weightedReturn / 100 / 12).toLocaleString()}</span>
             </div>
           </div>
         </div>
@@ -175,14 +327,27 @@ export function CalculatorPage({ t, darkMode }: CalculatorPageProps) {
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 20, right: 10, left: 0, bottom: 0 }}>
                 <defs>
-                  <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={darkMode ? "#58a6ff" : "#0052cc"} stopOpacity={0.3} />
+                  {/* Total portfolio gradient */}
+                  <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={darkMode ? "#58a6ff" : "#0052cc"} stopOpacity={0.15} />
                     <stop offset="95%" stopColor={darkMode ? "#58a6ff" : "#0052cc"} stopOpacity={0} />
                   </linearGradient>
+                  {/* Deposited gradient */}
                   <linearGradient id="colorDeposited" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={darkMode ? "#8b949e" : "#5d6b82"} stopOpacity={0.3} />
+                    <stop offset="5%" stopColor={darkMode ? "#8b949e" : "#5d6b82"} stopOpacity={0.15} />
                     <stop offset="95%" stopColor={darkMode ? "#8b949e" : "#5d6b82"} stopOpacity={0} />
                   </linearGradient>
+                  {/* Per-investment gradients */}
+                  {investments.map((inv, idx) => {
+                    const color = INVESTMENT_COLORS[idx % INVESTMENT_COLORS.length];
+                    const c = darkMode ? color.dark : color.stroke;
+                    return (
+                      <linearGradient key={inv.id} id={color.gradient} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={c} stopOpacity={0.15} />
+                        <stop offset="95%" stopColor={c} stopOpacity={0} />
+                      </linearGradient>
+                    );
+                  })}
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={darkMode ? "#3d4452" : "#eceef0"} />
                 <XAxis
@@ -198,20 +363,13 @@ export function CalculatorPage({ t, darkMode }: CalculatorPageProps) {
                   tickLine={false}
                   tick={{ fontSize: 12, fill: darkMode ? "#b0b3b8" : "#45464d" }}
                   width={60}
-                  tickFormatter={(val) => {
-                    if (val >= 1e15) return `$${+(val / 1e15).toFixed(1)}${t.unitQ}`;
-                    if (val >= 1e12) return `$${+(val / 1e12).toFixed(1)}${t.unitT}`;
-                    if (val >= 1e9)  return `$${+(val / 1e9).toFixed(1)}${t.unitB}`;
-                    if (val >= 1e6)  return `$${+(val / 1e6).toFixed(1)}${t.unitM}`;
-                    if (val >= 1e3)  return `$${+(val / 1e3).toFixed(1)}${t.unitK}`;
-                    return `$${val}`;
-                  }}
+                  tickFormatter={formatValue}
                 />
                 <Tooltip
                   content={({ active, payload, label }) => {
                     if (active && payload && payload.length) {
-                      const dataValue = payload.find((p: any) => p.dataKey === 'value')?.value || 0;
-                      const monthlyPassive = dataValue * ((Number(expectedReturn) || 0) / 100) / 12;
+                      const totalVal = payload.find((p: any) => p.dataKey === 'total')?.value || 0;
+                      const monthlyPassive = (totalVal as number) * (weightedReturn / 100) / 12;
 
                       return (
                         <div className="p-3 rounded-lg shadow-xl border border-outline-variant/20" style={{ backgroundColor: darkMode ? "#161a22" : "#ffffff" }}>
@@ -221,7 +379,7 @@ export function CalculatorPage({ t, darkMode }: CalculatorPageProps) {
                           {payload.map((entry: any, index: number) => (
                             <div key={`item-${index}`} className="flex justify-between gap-6 text-xs font-bold mb-1" style={{ color: entry.color }}>
                               <span>{entry.name}:</span>
-                              <span>${entry.value.toLocaleString()}</span>
+                              <span>${(entry.value as number).toLocaleString()}</span>
                             </div>
                           ))}
                           <div className="flex justify-between gap-6 text-xs font-black mt-2 pt-2 border-t border-outline-variant/10 text-primary">
@@ -235,15 +393,38 @@ export function CalculatorPage({ t, darkMode }: CalculatorPageProps) {
                   }}
                 />
                 <Legend iconType="circle" wrapperStyle={{ paddingTop: "20px", fontSize: "12px", fontWeight: "bold" }} />
+
+                {/* Total portfolio value — prominent area */}
                 <Area
                   type="monotone"
-                  dataKey="value"
+                  dataKey="total"
                   name={t.totalValue}
                   stroke={darkMode ? "#58a6ff" : "#0052cc"}
                   strokeWidth={3}
                   fillOpacity={1}
-                  fill="url(#colorValue)"
+                  fill="url(#colorTotal)"
                 />
+
+                {/* Individual investment lines */}
+                {investments.map((inv, idx) => {
+                  const color = INVESTMENT_COLORS[idx % INVESTMENT_COLORS.length];
+                  const c = darkMode ? color.dark : color.stroke;
+                  return (
+                    <Area
+                      key={inv.id}
+                      type="monotone"
+                      dataKey={inv.id}
+                      name={inv.name || `${t.investmentLabel || "Investment"} ${idx + 1}`}
+                      stroke={c}
+                      strokeWidth={1.5}
+                      strokeDasharray="6 3"
+                      fillOpacity={0}
+                      fill={`url(#${color.gradient})`}
+                    />
+                  );
+                })}
+
+                {/* Total deposited — baseline */}
                 <Area
                   type="monotone"
                   dataKey="deposited"

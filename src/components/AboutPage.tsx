@@ -2,8 +2,8 @@ import { TrendingUp, Globe as Language, Scale as Rule, Network as Hub, Quote as 
 import { motion } from "motion/react";
 
 interface AboutPageProps {
-  t: any;
-  setActiveTab: (tab: "dashboard" | "about") => void;
+  t: Record<string, string>;
+  setActiveTab: (tab: "dashboard" | "about" | "calculator") => void;
 }
 
 export function AboutPage({ t, setActiveTab }: AboutPageProps) {
