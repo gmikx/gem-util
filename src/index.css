@@ -1,0 +1,60 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-headline: "Manrope", sans-serif;
+  
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-low: var(--surface-low);
+  --color-surface-container: var(--surface-container);
+  --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
+  --color-tertiary: #009668;
+  --color-tertiary-fixed: #6ffbbe;
+  --color-on-surface-variant: var(--on-surface-variant);
+  --color-outline-variant: var(--outline-variant);
+}
+
+@layer base {
+  :root {
+    --background: #f7f9fb;
+    --surface: #ffffff;
+    --surface-low: #f2f4f6;
+    --surface-container: #eceef0;
+    --primary: #000000;
+    --secondary: #515f74;
+    --on-surface-variant: #45464d;
+    --outline-variant: #c6c6cd;
+  }
+
+  .dark {
+    --background: #0a0c10;
+    --surface: #161a22;
+    --surface-low: #1c212b;
+    --surface-container: #242b38;
+    --primary: #ffffff;
+    --secondary: #a1b0c8;
+    --on-surface-variant: #b0b3b8;
+    --outline-variant: #3d4452;
+  }
+
+  body {
+    @apply bg-background text-primary font-sans antialiased transition-colors duration-300;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-headline;
+  }
+}
+
+.tonal-glass {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(24px);
+}
+
+.tonal-gradient-success {
+  background: linear-gradient(15deg, var(--color-tertiary-fixed) 0%, var(--color-tertiary) 100%);
+}
+
