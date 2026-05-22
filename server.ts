@@ -43,7 +43,7 @@ async function startServer() {
   app.get("/api/momentum", async (req, res) => {
     try {
       const today = new Date();
-      const defaultEndDate = subMonths(today, 1);
+      const defaultEndDate = today;
       const defaultStartDate = subMonths(defaultEndDate, 12);
 
       const reqStart = req.query.startDate as string;
@@ -75,18 +75,39 @@ async function startServer() {
       const results = await Promise.all(
         tickers.map(async (ticker) => {
           try {
-            const history: any = await yahooFinance.historical(ticker, {
-              period1: format(startDate, "yyyy-MM-dd"),
-              period2: format(endDate, "yyyy-MM-dd"),
-              interval: "1d",
-            });
+            const chartResult = await yahooFinance.chart(
+              ticker,
+              {
+                period1: format(startDate, "yyyy-MM-dd"),
+                period2: format(endDate, "yyyy-MM-dd"),
+                interval: "1d",
+              },
+              { validateResult: false }
+            );
 
-            if (!history || history.length < 2) {
-              throw new Error(`Insufficient data for ${ticker}`);
+            const rawQuotes = chartResult.quotes || [];
+
+            const cleanHistory = rawQuotes
+              .filter((h: any) =>
+                (h.close !== null && h.close !== undefined) ||
+                (h.adjclose !== null && h.adjclose !== undefined)
+              )
+              .map((h: any) => ({
+                date: h.date,
+                open: h.open,
+                high: h.high,
+                low: h.low,
+                close: h.close,
+                volume: h.volume,
+                adjClose: h.adjclose ?? h.close,
+              }));
+
+            if (cleanHistory.length < 2) {
+              throw new Error(`Insufficient clean data for ${ticker}`);
             }
 
-            const startPrice = history[0].adjClose || history[0].close;
-            const endPrice = history[history.length - 1].adjClose || history[history.length - 1].close;
+            const startPrice = cleanHistory[0].adjClose || cleanHistory[0].close;
+            const endPrice = cleanHistory[cleanHistory.length - 1].adjClose || cleanHistory[cleanHistory.length - 1].close;
             const returnPct = ((endPrice / startPrice) - 1) * 100;
 
             // Get current price for display
@@ -98,7 +119,7 @@ async function startServer() {
               returnPct,
               currentPrice: quote.regularMarketPrice,
               // Calculate cumulative return for each point in history
-              history: history.map((h: any) => {
+              history: cleanHistory.map((h: any) => {
                 const currentPointPrice = h.adjClose || h.close;
                 const cumulativeReturn = ((currentPointPrice / startPrice) - 1) * 100;
                 return {
