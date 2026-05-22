@@ -311,19 +311,33 @@ export function Dashboard({
 
 /** Build chart data points from the API response, filtered by the selected period */
 function buildChartData(data: MomentumResponse, period: string, language: string) {
-  const refHistory = data.data[0].history;
-  const lastDateStr = refHistory[refHistory.length - 1]?.date;
-  const baselineDate = lastDateStr ? new Date(lastDateStr) : new Date();
+  // Collect the superset of all trading dates across all tickers
+  const allDates = Array.from(
+    new Set(data.data.flatMap((d) => d.history?.map((h) => h.date) ?? []))
+  ).sort();
 
-  let cutoff = new Date(baselineDate);
-  if (period === "1m") cutoff.setMonth(baselineDate.getMonth() - 1);
-  else if (period === "3m") cutoff.setMonth(baselineDate.getMonth() - 3);
-  else if (period === "ytd") cutoff = new Date(baselineDate.getFullYear(), 0, 1);
-  else cutoff = new Date(0); // 12m — show all data the backend provided
+  if (allDates.length === 0) return [];
 
-  const cutoffTime = cutoff.getTime();
-  let startIndex = refHistory.findIndex((h) => new Date(h.date).getTime() >= cutoffTime);
-  if (startIndex === -1) startIndex = 0;
+  const lastDateStr = allDates[allDates.length - 1];
+  const baselineDate = new Date(lastDateStr);
+
+  let cutoffDate: Date;
+  if (period === "1m") {
+    cutoffDate = new Date(baselineDate);
+    cutoffDate.setMonth(baselineDate.getMonth() - 1);
+  } else if (period === "3m") {
+    cutoffDate = new Date(baselineDate);
+    cutoffDate.setMonth(baselineDate.getMonth() - 3);
+  } else if (period === "ytd") {
+    cutoffDate = new Date(baselineDate.getFullYear(), 0, 1);
+  } else {
+    cutoffDate = new Date(0); // 12m — show all data
+  }
+
+  const cutoffTime = cutoffDate.getTime();
+  const filteredDates = allDates.filter((d) => new Date(d).getTime() >= cutoffTime);
+
+  if (filteredDates.length === 0) return [];
 
   const dateFormatter = new Intl.DateTimeFormat(language === "pl" ? "pl-PL" : "en-US", {
     day: "numeric",
@@ -331,19 +345,49 @@ function buildChartData(data: MomentumResponse, period: string, language: string
     year: language === "pl" ? "numeric" : undefined,
   });
 
-  return refHistory.slice(startIndex).map((_, idx) => {
-    const originalIdx = startIndex + idx;
-    const rawDateString = refHistory[originalIdx]?.date;
-    const formattedDate = rawDateString ? dateFormatter.format(new Date(rawDateString)) : "";
 
-    const point: Record<string, string | number> = { name: formattedDate };
-    data.data.forEach((d) => {
-      if (d.history?.[originalIdx] && d.history?.[startIndex]) {
-        const currentPrice = (d.history[originalIdx] as any).close || d.history[originalIdx].price;
-        const startPrice = (d.history[startIndex] as any).close || d.history[startIndex].price;
-        point[d.ticker] = startPrice > 0 ? ((currentPrice / startPrice) - 1) * 100 : 0;
-      }
+  // Build per-ticker baseline: first price available within the filtered window
+  // (may not exist on the very first date if the ticker had a gap there)
+  const tickerMeta = data.data.map((d) => {
+    const map = new Map<string, number>();
+    d.history?.forEach((h) => {
+      const price = (h as any).close ?? h.price;
+      if (price != null) map.set(h.date, price);
     });
+
+    // Find the first date in filteredDates where this ticker actually has a price
+    let baseDate: string | null = null;
+    let basePrice: number | null = null;
+    for (const dt of filteredDates) {
+      const p = map.get(dt);
+      if (p != null && p > 0) { baseDate = dt; basePrice = p; break; }
+    }
+
+    return { ticker: d.ticker, map, baseDate, basePrice };
+  });
+
+  return filteredDates.map((dateStr) => {
+    const formattedDate = dateFormatter.format(new Date(dateStr));
+    const point: Record<string, string | number> = { name: formattedDate };
+
+    tickerMeta.forEach(({ ticker, map, baseDate, basePrice }) => {
+      if (basePrice == null || baseDate == null) return; // no data at all in window
+
+      if (dateStr < baseDate) {
+        // Before ticker's first data point → show flat 0
+        point[ticker] = 0;
+        return;
+      }
+
+      const currentPrice = map.get(dateStr);
+      if (currentPrice != null) {
+        point[ticker] = ((currentPrice / basePrice) - 1) * 100;
+      }
+      // if no data for this exact date (gap), omit the key → recharts will interpolate/skip
+    });
+
     return point;
   });
 }
+
+
