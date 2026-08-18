@@ -70,6 +70,12 @@ export const translations = {
     investmentLabel: "Inwestycja",
     defaultEtf: "GEM",
     defaultBonds: "Obligacje",
+    advancedReturns: "Zaawansowane zwroty",
+    advancedReturnsHint: "Określ stopy zwrotu dla poszczególnych zakresów lat. Luki w zakresach używają domyślnej stopy powyżej.",
+    segmentFrom: "Od roku",
+    segmentTo: "Do roku",
+    segmentRate: "Stopa %",
+    addSegment: "Dodaj zakres",
   },
   en: {
     dashboard: "Dashboard",
@@ -142,5 +148,11 @@ export const translations = {
     investmentLabel: "Investment",
     defaultEtf: "GEM",
     defaultBonds: "Bonds",
+    advancedReturns: "Advanced Returns",
+    advancedReturnsHint: "Define return rates for specific year ranges. Gaps fall back to the default return above.",
+    segmentFrom: "From yr",
+    segmentTo: "To yr",
+    segmentRate: "Rate %",
+    addSegment: "Add range",
   }
 };

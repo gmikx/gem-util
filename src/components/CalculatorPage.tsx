@@ -1,7 +1,15 @@
 import { useState, useMemo, useEffect } from "react";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { Calculator, Plus, X, GripVertical } from "lucide-react";
+import { Calculator, Plus, X, ChevronDown, Trash2 } from "lucide-react";
+
+// A segment defines a return rate for a specific year range
+interface ReturnSegment {
+  id: string;
+  fromYear: number;
+  toYear: number | ""; // "" means "end of investment period"
+  rate: number | "";
+}
 
 interface Investment {
   id: string;
@@ -9,6 +17,8 @@ interface Investment {
   initialAmount: number | "";
   monthlyContribution: number | "";
   expectedReturn: number | "";
+  // If non-empty, these override expectedReturn per year range
+  returnSegments: ReturnSegment[];
 }
 
 import type { MomentumResponse } from "../types";
@@ -35,7 +45,191 @@ function createDefaultInvestment(name: string, monthly: number, returnPct: numbe
     initialAmount: 0,
     monthlyContribution: monthly,
     expectedReturn: returnPct,
+    returnSegments: [],
   };
+}
+
+function createDefaultSegment(): ReturnSegment {
+  return {
+    id: crypto.randomUUID(),
+    fromYear: 1,
+    toYear: "",
+    rate: "",
+  };
+}
+
+/** Resolve which return rate to use for a given year (1-indexed) */
+function getRateForYear(inv: Investment, year: number, totalYears: number): number {
+  if (!inv.returnSegments || inv.returnSegments.length === 0) {
+    return Number(inv.expectedReturn) || 0;
+  }
+  for (const seg of inv.returnSegments) {
+    const from = seg.fromYear;
+    const to = seg.toYear === "" ? totalYears : Number(seg.toYear);
+    if (year >= from && year <= to) {
+      return Number(seg.rate) || 0;
+    }
+  }
+  // Fall back to the base expectedReturn for gaps
+  return Number(inv.expectedReturn) || 0;
+}
+
+// ─── Advanced Return Segments Panel ─────────────────────────────────────────────
+
+interface SegmentsPanelProps {
+  inv: Investment;
+  years: number;
+  darkMode: boolean;
+  t: Record<string, string>;
+  onUpdate: (id: string, field: keyof Investment, value: unknown) => void;
+}
+
+function SegmentsPanel({ inv, years, darkMode, t, onUpdate }: SegmentsPanelProps) {
+  const [open, setOpen] = useState(false);
+
+  const updateSegment = (segId: string, field: keyof ReturnSegment, value: unknown) => {
+    const updated = inv.returnSegments.map((s) =>
+      s.id === segId ? { ...s, [field]: value } : s
+    );
+    onUpdate(inv.id, "returnSegments", updated);
+  };
+
+  const addSegment = () => {
+    const lastSeg = inv.returnSegments[inv.returnSegments.length - 1];
+    const newSeg = createDefaultSegment();
+    if (lastSeg) {
+      const lastTo = lastSeg.toYear === "" ? years : Number(lastSeg.toYear);
+      newSeg.fromYear = Math.min(lastTo + 1, years);
+    }
+    onUpdate(inv.id, "returnSegments", [...inv.returnSegments, newSeg]);
+  };
+
+  const removeSegment = (segId: string) => {
+    onUpdate(inv.id, "returnSegments", inv.returnSegments.filter((s) => s.id !== segId));
+  };
+
+  const hasSegments = inv.returnSegments.length > 0;
+
+  const inputCls = `bg-surface rounded border border-outline-variant/20 px-2 py-1 text-xs font-bold text-primary outline-none focus:ring-1 focus:ring-primary/40 w-full`;
+
+  return (
+    <div className="mt-2">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors ${
+          hasSegments ? "text-primary" : "text-on-surface-variant hover:text-primary"
+        }`}
+      >
+        <ChevronDown
+          className={`w-3 h-3 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+        />
+        {t.advancedReturns || "Advanced Returns"}
+        {hasSegments && (
+          <span
+            className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-black"
+            style={{
+              background: darkMode ? "rgba(111,251,190,0.18)" : "rgba(0,150,104,0.12)",
+              color: darkMode ? "#6ffbbe" : "#009668",
+            }}
+          >
+            {inv.returnSegments.length}
+          </span>
+        )}
+      </button>
+
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            key="segments"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: "easeInOut" }}
+            style={{ overflow: "hidden" }}
+          >
+            <div className="mt-2.5 space-y-2">
+              <p className="text-[10px] text-on-surface-variant leading-relaxed">
+                {t.advancedReturnsHint ||
+                  "Define return rates for specific year ranges. Gaps fall back to the default return above."}
+              </p>
+
+              {inv.returnSegments.length > 0 && (
+                <div
+                  className="grid gap-1.5 items-center text-[9px] font-bold uppercase tracking-widest text-on-surface-variant pr-7"
+                  style={{ gridTemplateColumns: "1fr 1fr 1fr" }}
+                >
+                  <span>{t.segmentFrom || "From yr"}</span>
+                  <span>{t.segmentTo || "To yr"}</span>
+                  <span>{t.segmentRate || "Rate %"}</span>
+                </div>
+              )}
+
+              {inv.returnSegments.map((seg) => (
+                <div
+                  key={seg.id}
+                  className="grid gap-1.5 items-center"
+                  style={{ gridTemplateColumns: "1fr 1fr 1fr auto" }}
+                >
+                  <input
+                    type="number"
+                    min={1}
+                    max={years}
+                    value={seg.fromYear}
+                    onChange={(e) =>
+                      updateSegment(seg.id, "fromYear", e.target.value === "" ? 1 : Number(e.target.value))
+                    }
+                    className={inputCls}
+                    placeholder="1"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    max={years}
+                    value={seg.toYear}
+                    onChange={(e) =>
+                      updateSegment(seg.id, "toYear", e.target.value === "" ? "" : Number(e.target.value))
+                    }
+                    className={inputCls}
+                    placeholder={String(years)}
+                  />
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.5"
+                      value={seg.rate}
+                      onChange={(e) =>
+                        updateSegment(seg.id, "rate", e.target.value === "" ? "" : Number(e.target.value))
+                      }
+                      className={`${inputCls} pr-5`}
+                      placeholder="8"
+                    />
+                    <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-on-surface-variant font-bold pointer-events-none">
+                      %
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => removeSegment(seg.id)}
+                    className="text-on-surface-variant hover:text-red-500 transition-colors flex-shrink-0"
+                    title="Remove"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+
+              <button
+                onClick={addSegment}
+                className="flex items-center gap-1.5 text-[10px] font-bold text-on-surface-variant hover:text-primary transition-colors mt-1"
+              >
+                <Plus className="w-3 h-3" />
+                {t.addSegment || "Add range"}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 }
 
 export function CalculatorPage({ t, darkMode, data }: CalculatorPageProps) {
@@ -49,7 +243,12 @@ export function CalculatorPage({ t, darkMode, data }: CalculatorPageProps) {
     const saved = localStorage.getItem("gem_calc_investments");
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved) as Investment[];
+        // Migrate old investments that don't have returnSegments
+        return parsed.map((inv) => ({
+          ...inv,
+          returnSegments: inv.returnSegments ?? [],
+        }));
       } catch { /* fall through */ }
     }
     return [
@@ -87,7 +286,7 @@ export function CalculatorPage({ t, darkMode, data }: CalculatorPageProps) {
     setInvestments(prev => prev.filter(inv => inv.id !== id));
   };
 
-  const updateInvestment = (id: string, field: keyof Investment, value: string | number) => {
+  const updateInvestment = (id: string, field: keyof Investment, value: unknown) => {
     setInvestments(prev =>
       prev.map(inv => inv.id === id ? { ...inv, [field]: value } : inv)
     );
@@ -97,14 +296,14 @@ export function CalculatorPage({ t, darkMode, data }: CalculatorPageProps) {
     const result: Record<string, number | string>[] = [];
     const _increase = Number(contributionIncrease) || 0;
 
-    // Initialize per-investment tracking
+    // Initialize per-investment tracking (keep inv reference for segment lookup)
     const state = investments.map(inv => ({
       id: inv.id,
       name: inv.name || "Unnamed",
       total: Number(inv.initialAmount) || 0,
       deposited: Number(inv.initialAmount) || 0,
       monthly: Number(inv.monthlyContribution) || 0,
-      returnRate: Number(inv.expectedReturn) || 0,
+      inv, // retained for getRateForYear
     }));
 
     // Year 0
@@ -126,9 +325,11 @@ export function CalculatorPage({ t, darkMode, data }: CalculatorPageProps) {
       let yearTotalValue = 0;
 
       state.forEach(s => {
+        // Use segment-aware return rate for this year
+        const returnRate = getRateForYear(s.inv, y, years);
         for (let m = 0; m < 12; m++) {
           s.total += s.monthly;
-          s.total *= (1 + (s.returnRate / 100) / 12);
+          s.total *= (1 + (returnRate / 100) / 12);
           s.deposited += s.monthly;
         }
         // Apply yearly contribution increase
@@ -257,6 +458,15 @@ export function CalculatorPage({ t, darkMode, data }: CalculatorPageProps) {
                       </div>
                     </div>
                   </div>
+
+                  {/* Advanced: per-year-range return rates */}
+                  <SegmentsPanel
+                    inv={inv}
+                    years={years}
+                    darkMode={darkMode}
+                    t={t}
+                    onUpdate={updateInvestment}
+                  />
                 </div>
               );
             })}
