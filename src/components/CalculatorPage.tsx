@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { Calculator, Plus, X, ChevronDown, Trash2 } from "lucide-react";
+import { Calculator, Plus, X, ChevronDown, Trash2, Eye, EyeOff } from "lucide-react";
 
 // A segment defines a return rate for a specific year range
 interface ReturnSegment {
@@ -19,6 +19,8 @@ interface Investment {
   expectedReturn: number | "";
   // If non-empty, these override expectedReturn per year range
   returnSegments: ReturnSegment[];
+  // Whether this investment is included in the chart/totals
+  enabled: boolean;
 }
 
 import type { MomentumResponse } from "../types";
@@ -46,6 +48,7 @@ function createDefaultInvestment(name: string, monthly: number, returnPct: numbe
     monthlyContribution: monthly,
     expectedReturn: returnPct,
     returnSegments: [],
+    enabled: true,
   };
 }
 
@@ -244,10 +247,11 @@ export function CalculatorPage({ t, darkMode, data }: CalculatorPageProps) {
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as Investment[];
-        // Migrate old investments that don't have returnSegments
+        // Migrate old investments that don't have returnSegments / enabled
         return parsed.map((inv) => ({
           ...inv,
           returnSegments: inv.returnSegments ?? [],
+          enabled: inv.enabled ?? true,
         }));
       } catch { /* fall through */ }
     }
@@ -296,15 +300,17 @@ export function CalculatorPage({ t, darkMode, data }: CalculatorPageProps) {
     const result: Record<string, number | string>[] = [];
     const _increase = Number(contributionIncrease) || 0;
 
-    // Initialize per-investment tracking (keep inv reference for segment lookup)
-    const state = investments.map(inv => ({
-      id: inv.id,
-      name: inv.name || "Unnamed",
-      total: Number(inv.initialAmount) || 0,
-      deposited: Number(inv.initialAmount) || 0,
-      monthly: Number(inv.monthlyContribution) || 0,
-      inv, // retained for getRateForYear
-    }));
+    // Only include enabled investments in the calculation
+    const state = investments
+      .filter(inv => inv.enabled)
+      .map(inv => ({
+        id: inv.id,
+        name: inv.name || "Unnamed",
+        total: Number(inv.initialAmount) || 0,
+        deposited: Number(inv.initialAmount) || 0,
+        monthly: Number(inv.monthlyContribution) || 0,
+        inv, // retained for getRateForYear
+      }));
 
     // Year 0
     const initialPoint: Record<string, number | string> = { year: 0 };
@@ -351,11 +357,12 @@ export function CalculatorPage({ t, darkMode, data }: CalculatorPageProps) {
   const finalTotal = (chartData[chartData.length - 1]?.total as number) || 0;
   const finalDeposited = (chartData[chartData.length - 1]?.deposited as number) || 0;
 
-  // Weighted average return for passive income estimate
+  // Weighted average return for passive income estimate (enabled investments only)
   const weightedReturn = useMemo(() => {
-    const totalMonthly = investments.reduce((sum, inv) => sum + (Number(inv.monthlyContribution) || 0), 0);
+    const active = investments.filter(inv => inv.enabled);
+    const totalMonthly = active.reduce((sum, inv) => sum + (Number(inv.monthlyContribution) || 0), 0);
     if (totalMonthly === 0) return 0;
-    return investments.reduce((sum, inv) => {
+    return active.reduce((sum, inv) => {
       const w = (Number(inv.monthlyContribution) || 0) / totalMonthly;
       return sum + w * (Number(inv.expectedReturn) || 0);
     }, 0);
@@ -399,9 +406,13 @@ export function CalculatorPage({ t, darkMode, data }: CalculatorPageProps) {
               const color = INVESTMENT_COLORS[idx % INVESTMENT_COLORS.length];
               const stroke = darkMode ? color.dark : color.stroke;
               return (
-                <div key={inv.id} className="p-4 bg-surface-low rounded-xl space-y-3 relative group">
+                <div
+                  key={inv.id}
+                  className="p-4 bg-surface-low rounded-xl space-y-3 relative group transition-opacity duration-200"
+                  style={{ opacity: inv.enabled ? 1 : 0.45 }}
+                >
                   <div className="flex items-center gap-2 mb-1">
-                    <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: stroke }} />
+                    <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: inv.enabled ? stroke : (darkMode ? "#3d4452" : "#c6c6cd") }} />
                     <input
                       type="text"
                       value={inv.name}
@@ -409,6 +420,16 @@ export function CalculatorPage({ t, darkMode, data }: CalculatorPageProps) {
                       className="flex-1 bg-transparent border-none outline-none font-bold text-sm text-primary"
                       placeholder={t.investmentLabel || "Investment name"}
                     />
+                    {/* Eye toggle — always visible */}
+                    <button
+                      onClick={() => updateInvestment(inv.id, "enabled", !inv.enabled)}
+                      className="text-on-surface-variant hover:text-primary transition-colors"
+                      title={inv.enabled ? "Hide from chart" : "Show in chart"}
+                    >
+                      {inv.enabled
+                        ? <Eye className="w-4 h-4" />
+                        : <EyeOff className="w-4 h-4" />}
+                    </button>
                     {investments.length > 1 && (
                       <button
                         onClick={() => removeInvestment(inv.id)}
